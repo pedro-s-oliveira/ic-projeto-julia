@@ -4,5 +4,7 @@ function calcular_custo_total(quantidade, custo_unitario)
 end
 
 function formatar_moeda(valor)
-    return "R$ $(round(valor, digits=2))"
+    return "R\$ $(round(valor, digits=2))"
 end
+
+println("Hello world!")
