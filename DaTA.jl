@@ -45,9 +45,9 @@ module Dados
     
     #leitura dos dados
     function leitura(d::dados)
-        #caminho = "D:/Dropbox/00-codigos-atuais/julia-lang/ic-prp/pedro/ABS2_50_6.dat" #WRedstar
-        caminho = "/home/varatan/Documentos/Dropbox/00-codigos-atuais/julia-lang/ic-prp/pedro/ABS2_50_6.dat" #Redstar e Blackstar
-        #caminho = "C:/Users/allex/Dropbox/00-codigos-atuais/julia-lang/ic-prp/pedro/ABS2_50_6.dat"#Notebook
+        #caminho = "D:/Dropbox/00-codigos-atuais/julia-lang/ic-prp/pedro/ic-projeto-julia/ABS2_50_6.dat" #WRedstar
+        caminho = "/home/varatan/Documentos/Dropbox/00-codigos-atuais/julia-lang/ic-prp/pedro/ic-projeto-julia/ABS2_50_6.dat" #Redstar e Blackstar
+        #caminho = "C:/Users/allex/Dropbox/00-codigos-atuais/julia-lang/ic-prp/pedro/ic-projeto-julia/ABS2_50_6.dat"#Notebook        
         arquivo = open(caminho, "r") do file
             read(file, String)
         end
