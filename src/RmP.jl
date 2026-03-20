@@ -81,7 +81,7 @@ module Rmp
 
     function adicionar_restricao!(m::mp, nome::Symbol, expressao)
         # Cria restrição
-        #constr_ref = add_constraint(m.mdl, expressao)
+        #constr_ref = @constraint(m.mdl, expressao)
         constr_ref = add_constraint(m.mdl, expressao)
         
         # Armazena no dicionário
