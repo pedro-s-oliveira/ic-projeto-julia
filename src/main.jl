@@ -3,10 +3,10 @@ module MeuProjeto
 
 include("calculos.jl")
 include("DaTA.jl")                 
-include("PRP_Relaxado_Cap2.jl")    
+include("PRP_Relaxado_Cap2.jl")  
 
 using .Dados               
-using .PRP_Relaxado_Cap2           
+using .PRP_Relaxado_Cap2          
 
 function executar()
     # Seu código original
