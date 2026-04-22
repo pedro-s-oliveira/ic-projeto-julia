@@ -1,41 +1,35 @@
-# O ponto de entrada do projeto
 module MeuProjeto
 
 include("calculos.jl")
 include("DaTA.jl")                 
 include("PRP_Relaxado_Cap2.jl")  
+include("RmP.jl") 
 
 using .Dados               
 using .PRP_Relaxado_Cap2          
+using .Rmp 
+using JuMP, HiGHS
 
-function executar()
-    # Seu código original
-    qtd = 150
-    preco = 12.50
-    total = calcular_custo_total(qtd, preco)
-    println("O custo total da producao e: ", formatar_moeda(total))
+# ==============================================================================
+# ESTRUTURAS E UTILITÁRIOS
+# ==============================================================================
 
-    # O nosso código
-    println("--------------------------------------------------")
-    println("Localizando e lendo a instância ABS2_50_6.dat...")
-
-    caminho_arquivo = joinpath(@__DIR__, "ABS2_50_6.dat")
-    dados_instancia = Dados.dados()
-    Dados.leitura(dados_instancia, caminho_arquivo)
-
-    println("Dados carregados! Resolvendo modelo compacto relaxado (Cap 2.2.1)...")
-
-    # A chamada ao modelo está protegida aqui dentro!
-    lb_relaxado = resolver_modelo_221_relaxado(dados_instancia)
-
-    println("--------------------------------------------------")
+mutable struct QRoute
+    h::Int 
+    i::Int 
+    j::Int 
+    d::Int 
+    rc::Float64
+    U::BitSet 
+    UE::Vector{Int}
+    
+    QRoute() = new(0, 0, 0, 0, 0.0, BitSet(), Int[])
 end
 
 function adaptar_dados_prp(d_original::Dados.dados)
     n_clientes = d_original.n
     T = d_original.T
     total_nos = n_clientes + 2
-    
     custo_rota = zeros(Float64, total_nos, total_nos)
     demanda = zeros(Int, total_nos, T)
     estoque_maximo = zeros(Int, total_nos)
@@ -52,95 +46,214 @@ function adaptar_dados_prp(d_original::Dados.dados)
         idx = i + 1
         estoque_maximo[idx] = d_original.U[(i, 1)]
         custo_estoque[idx] = d_original.h[(i, 1)]
-        
-        for t in 1:T
-            demanda[idx, t] = d_original.d[(i, 1, t)]
-        end
+        for t in 1:T demanda[idx, t] = d_original.d[(i, 1, t)] end
     end
     
     estoque_maximo[1] = d_original.U[(0, 1)]
     custo_estoque[1] = d_original.h[(0, 1)]
     
-    u = d_original.u[1] 
-    f = d_original.l[1] 
-    C = d_original.C[1] 
-    
     return (n=n_clientes, T=T, c=custo_rota, d=demanda, 
-            L=estoque_maximo, h=custo_estoque, u=u, f=f, C=C)
+            L=estoque_maximo, h=custo_estoque, 
+            u=d_original.u[1], f=d_original.l[1], C=d_original.C[1])
 end
 
-function build_RMP(d_prp)
-    # Inicializa o modelo com HiGHS
-    model = Model(optimizer_with_attributes(HiGHS.Optimizer, "output_flag" => false))
+# ==============================================================================
+# GESTÃO DE COLUNAS E DUAIS
+# ==============================================================================
+
+function extract_duals(rmp_struct, d_prp)
+    model = rmp_struct.mdl
+    T, n_clientes = d_prp.T, d_prp.n
+    alpha1, alpha3 = zeros(T), zeros(T)
+    alpha2 = zeros(n_clientes + 2, T)
     
-    T = d_prp.T
-    n_clientes = d_prp.n
-    clientes = 2:(n_clientes + 1)
-    deposito = 1
+    if has_duals(model)
+        for t in 1:T
+            alpha1[t] = dual(rmp_struct.cnst[:balanco_planta][t])
+            alpha3[t] = dual(rmp_struct.cnst[:selecao_plano][t])
+            for i in 2:(n_clientes+1)
+                alpha2[i, t] = dual(rmp_struct.cnst[:balanco_cliente][i, t])
+            end
+        end
+    end
+    return alpha1, alpha2, alpha3
+end
+
+function adicionar_coluna_prp!(rmp_struct, d_prp, t, entregas, custo_rota)
+    model = rmp_struct.mdl
+    theta = @variable(model, lower_bound=0.0, upper_bound=1.0)
     
-    # --- VARIÁVEIS ORIGINAIS (CONFORME FORMULAÇÃO 34-38 DO ARTIGO) ---
-    @variable(model, p[1:T] >= 0)                   # Produção (pt) [cite: 164]
-    @variable(model, I[1:(n_clientes+1), 0:T] >= 0) # Estoque (Iit) [cite: 165]
-    @variable(model, 0 <= y[1:T] <= 1)              # Setup relaxado (yt) [cite: 166]
+    set_objective_coefficient(model, theta, custo_rota)
     
-    # Variáveis Artificiais (Big-M) para garantir viabilidade na iteração zero
-    @variable(model, art_plant[1:T] >= 0)
-    @variable(model, art_cust[clientes, 1:T] >= 0)
+    total_entregue = sum(entregas)
+    if total_entregue > 0
+        set_normalized_coefficient(rmp_struct.cnst[:balanco_planta][t], theta, -Float64(total_entregue))
+    end
     
-    # --- FUNÇÃO OBJETIVO (EQUAÇÃO 34) --- 
-    # Nota: A parte dos planos de entrega (theta) será adicionada dinamicamente
-    @objective(model, Min, 
-        sum(d_prp.u * p[t] + d_prp.f * y[t] for t in 1:T) +                # Produção + Setup
-        sum(d_prp.h[1] * I[deposito, t] for t in 1:T) +                    # Estoque Fábrica
-        sum(d_prp.h[i] * I[i, t] for i in clientes, t in 1:T) +            # Estoque Clientes
-        1e7 * (sum(art_plant[t] for t in 1:T) + sum(art_cust[i, t] for i in clientes, t in 1:T)) # Penalidade
-    )
+    for i in 2:(d_prp.n + 1)
+        if entregas[i] > 0
+            set_normalized_coefficient(rmp_struct.cnst[:balanco_cliente][i, t], theta, Float64(entregas[i]))
+        end
+    end
     
-    # --- RESTRIÇÕES FIXAS ---
-    
-    # Estoque inicial (I0) [cite: 162]
-    for i in 1:(n_clientes+1)
-        fix(I[i, 0], d_prp.L[i] * 0.0, force=true) # Ajuste para d_prp.I0 se necessário
+    set_normalized_coefficient(rmp_struct.cnst[:selecao_plano][t], theta, 1.0)
+end
+
+# ==============================================================================
+# SUBPROBLEMA DE PRICING (Q-ROUTES PARA PRP)
+# ==============================================================================
+
+function qroutes_prp(d_prp, alpha1, alpha2, alpha3, t, E, UE)
+    total_nodes = d_prp.n + 2
+    deposito, copia = 1, total_nodes
+    cap = d_prp.C 
+
+    # 1. Custos Reduzidos dos Arcos 
+    _c = zeros(Float64, total_nodes, total_nodes)
+    for i in 1:(total_nodes-1), j in 2:total_nodes
+        if i != j
+            dist = d_prp.c[i, j]
+            _c[i, j] = (j == copia) ? dist : dist - ((alpha2[j, t] - alpha1[t]) * d_prp.d[j, t])
+        end
     end
 
-    # (35) Balanço de Estoque na Fábrica [cite: 343]
-    @constraint(model, balanco_planta[t=1:T],
-        I[deposito, t-1] + p[t] + art_plant[t] == I[deposito, t]
-    )
+    # 2. Programação Dinâmica COM ELEMENTARIEDADE (Prevenção de Ciclos)
+    R = [QRoute() for o in 1:(cap + 1), i in 1:total_nodes]
+    for o in 0:cap, i in 2:total_nodes
+        idx = o + 1
+        dem = (i == copia) ? 0 : d_prp.d[i, t]
+        if o == dem
+            R[idx, i].rc = (i != copia) ? _c[i, copia] : 0.0
+            R[idx, i].j, R[idx, i].d = copia, o - dem
+            
+            # Inicializa a memória da rota (BitSet)
+            R[idx, i].U = BitSet()
+            if i != copia
+                push!(R[idx, i].U, i)
+            end
+        elseif o < dem 
+            R[idx, i].rc = 1e9 
+        end
+    end
 
-    # (36) Balanço de Estoque nos Clientes [cite: 347]
-    @constraint(model, balanco_cliente[i=clientes, t=1:T],
-        I[i, t-1] + art_cust[i, t] == d_prp.d[i, t] + I[i, t]
-    )
+    for o in 1:cap, i in 2:(total_nodes-1)
+        dem = d_prp.d[i, t]
+        if o > dem
+            best_rc, next_node = 1e9, -1
+            best_U = BitSet()
+            prev_idx = o - dem + 1
+            
+            for j in 2:total_nodes
+                # MÁGICA AQUI: !(i in R[prev_idx, j].U) bloqueia clientes já visitados!
+                if i != j && !(i in R[prev_idx, j].U)
+                    if R[prev_idx, j].rc + _c[i, j] < best_rc
+                        best_rc = R[prev_idx, j].rc + _c[i, j]
+                        next_node = j
+                        best_U = R[prev_idx, j].U
+                    end
+                end
+            end
+            
+            R[o+1, i].rc, R[o+1, i].j, R[o+1, i].d = best_rc, next_node, o - dem
+            R[o+1, i].U = copy(best_U)
+            push!(R[o+1, i].U, i) # Salva o cliente 'i' como visitado
+        end
+    end
 
-    # (37) Seleção de plano de entrega (No máximo 1 por período) [cite: 351]
-    @constraint(model, selecao_plano[t=1:T], 0.0 <= 1.0)
+    # 3. Recuperação da Melhor Rota
+    best_total_rc, best_i, best_o = 1e9, -1, -1
+    for i in 2:(total_nodes-1), o in d_prp.d[i, t]:cap
+        lucro_inicial = (alpha2[i, t] - alpha1[t]) * d_prp.d[i, t]
+        custo_arco_inicial = d_prp.c[deposito, i] - lucro_inicial
+        
+        if custo_arco_inicial + R[o+1, i].rc < best_total_rc
+            best_total_rc = custo_arco_inicial + R[o+1, i].rc
+            best_i, best_o = i, o
+        end
+    end
 
-    # (4) Capacidade de Produção [cite: 194]
-    @constraint(model, cap_prod[t=1:T], p[t] <= d_prp.C * y[t])
+    final_rc = best_total_rc + alpha3[t]
+    if final_rc >= -0.001 
+        return final_rc, Int[], 0.0 
+    end
 
-    # (5) e (6) Capacidades de Estoque [cite: 194]
-    @constraint(model, cap_est_planta[t=1:T], I[deposito, t] <= d_prp.L[deposito])
-    @constraint(model, cap_est_cliente[i=clientes, t=1:T], I[i, t] <= d_prp.L[i])
+    # Traceback da rota real
+    entregas, custo_real = zeros(Int, total_nodes), d_prp.c[deposito, best_i]
+    curr_i, curr_o = best_i, best_o
+    entregas[curr_i] = d_prp.d[curr_i, t]
     
-    return model
+    while R[curr_o+1, curr_i].j != copia
+        next_j = R[curr_o+1, curr_i].j
+        custo_real += d_prp.c[curr_i, next_j]
+        curr_o, curr_i = R[curr_o+1, curr_i].d, next_j
+        entregas[curr_i] = d_prp.d[curr_i, t]
+    end
+    
+    return final_rc, entregas, custo_real + d_prp.c[curr_i, copia]
 end
 
-function main()
-    # Inicializa a struct e lê os dados brutos do arquivo .dat
-    d_bruto = Dados.dados()
-    Dados.leitura(d_bruto)
-    
-    # Executa o adaptador: agora d_prp tem matrizes rápidas para o JuMP
-    d_prp = adaptar_dados_prp(d_bruto)
-    
-    println("Dados adaptados com sucesso! Clientes: ", d_prp.n, " | Períodos: ", d_prp.T)
-    
-    # A partir daqui construiremos o create_master_model do PRP
-    # ...
+# ==============================================================================
+# FLUXO PRINCIPAL
+# ==============================================================================
+
+function executar()
+    # 1. PARTE ORIGINAL DO SEU PROJETO
+    qtd = 150
+    preco = 12.50
+    total = calcular_custo_total(qtd, preco)
+    println("O custo total da producao e: ", formatar_moeda(total))
+
+    println("--------------------------------------------------")
+    println("Localizando e lendo a instância ABS2_50_6.dat...")
+    caminho_arquivo = joinpath(@__DIR__, "ABS2_50_6.dat")
+    dados_instancia = Dados.dados()
+    Dados.leitura(dados_instancia, caminho_arquivo)
+
+    println("Dados carregados! Resolvendo modelo compacto relaxado (Cap 2.2.1)...")
+    lb_relaxado = resolver_modelo_221_relaxado(dados_instancia)
+    println("--------------------------------------------------")
+
+    # 2. GERAÇÃO DE COLUNAS
+    println("\nIniciando a adaptação dos dados para o Problema Mestre (RMP)...")
+    d_prp = adaptar_dados_prp(dados_instancia)
+    rmp_s = Rmp.createRMP(d_prp)
+
+    println("\nIniciando Geração de Colunas...")
+    any_new_column = true
+    iter = 0
+
+    while any_new_column
+        iter += 1
+        optimize!(rmp_s.mdl)
+        
+        if termination_status(rmp_s.mdl) != MOI.OPTIMAL 
+            println("Status de término anormal no RMP: ", termination_status(rmp_s.mdl))
+            break 
+        end
+        
+        println("Iteração $iter | LB Atual: ", round(objective_value(rmp_s.mdl), digits=2))
+        
+        a1, a2, a3 = extract_duals(rmp_s, d_prp)
+        any_new_column = false
+
+        for t in 1:d_prp.T
+            rc, entregas, custo_r = qroutes_prp(d_prp, a1, a2, a3, t, [], [])
+            if rc < -0.001
+                println("   -> [Adicionada] t = $t | Custo Reduzido: $(round(rc, digits=2)) | Total Entregue: $(sum(entregas))")
+                adicionar_coluna_prp!(rmp_s, d_prp, t, entregas, custo_r)
+                any_new_column = true
+            end
+        end
+    end
+
+    println("\n" * "="^40)
+    println("SOLUÇÃO FINAL ALCANÇADA")
+    println("Lower Bound Geração de Colunas: ", objective_value(rmp_s.mdl))
+    println("Total de iterações: ", iter)
+    println("="^40)
 end
 
-# Isso invoca a sua função sem causar o erro de World Age
+# Invocando a função principal no escopo correto para evitar os avisos de World Age
 Base.invokelatest(executar)
 
 end
