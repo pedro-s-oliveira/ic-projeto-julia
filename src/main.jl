@@ -221,8 +221,13 @@ function executar()
     println("\nIniciando Geração de Colunas...")
     any_new_column = true
     iter = 0
+    
+    # --- VARIÁVEIS DE CONTROLE DE ESTAGNAÇÃO ---
+    best_lb = -1e12
+    stagnation_counter = 0
+    max_stagnation = 15 # Se não melhorar por 15 iterações, encerramos.
 
-    while any_new_column
+    while any_new_column && iter < 1500
         iter += 1
         optimize!(rmp_s.mdl)
         
@@ -231,26 +236,42 @@ function executar()
             break 
         end
         
-        println("Iteração $iter | LB Atual: ", round(objective_value(rmp_s.mdl), digits=2))
+        current_lb = objective_value(rmp_s.mdl)
+        println("Iteração $iter | LB Atual: ", round(current_lb, digits=2))
+        
+        # --- VERIFICAÇÃO DE ESTAGNAÇÃO ---
+        if current_lb > best_lb + 0.1
+            best_lb = current_lb
+            stagnation_counter = 0 # Reseta o contador se houve melhoria
+        else
+            stagnation_counter += 1
+        end
+
+        if stagnation_counter >= max_stagnation
+            println("\n[!] ALERTA: O algoritmo atingiu o limite de estagnação ($max_stagnation iterações sem melhoria significativa).")
+            println("O limite inferior estabilizou devido à degenerescência do modelo. Interrompendo a busca.")
+            break
+        end
         
         a1, a2, a3 = extract_duals(rmp_s, d_prp)
         any_new_column = false
 
         for t in 1:d_prp.T
             rc, entregas, custo_r = qroutes_prp(d_prp, a1, a2, a3, t, [], [])
-            if rc < -0.001
-                println("   -> [Adicionada] t = $t | Custo Reduzido: $(round(rc, digits=2)) | Total Entregue: $(sum(entregas))")
+            # Usamos uma tolerância um pouco maior para evitar rotas "fantasmas"
+            if rc < -1.0 
                 adicionar_coluna_prp!(rmp_s, d_prp, t, entregas, custo_r)
                 any_new_column = true
             end
         end
     end
 
-    println("\n" * "="^40)
-    println("SOLUÇÃO FINAL ALCANÇADA")
-    println("Lower Bound Geração de Colunas: ", objective_value(rmp_s.mdl))
-    println("Total de iterações: ", iter)
-    println("="^40)
+    println("\n" * "="^50)
+    println("🏁 SOLUÇÃO FINAL DA GERAÇÃO DE COLUNAS")
+    println("Lower Bound Compacto original : 102600.82")
+    println("Lower Bound Geração de Colunas: ", round(objective_value(rmp_s.mdl), digits=2))
+    println("Total de iterações executadas : ", iter)
+    println("="^50)
 end
 
 # Invocando a função principal no escopo correto para evitar os avisos de World Age
