@@ -74,7 +74,12 @@ module Rmp
             I[i, t-1] + art_cust[i, t] == d_prp.d[i, t] + I[i, t]
         )
 
-        # (37) Seleção de plano de entrega
+        # (37) Restrição de Limite de Veículos (Hardcoded em 5 para teste inicial)
+        rmp.cnst[:limite_veiculos] = @constraint(model, [t=1:T],
+        0.0 <= 5.0
+        )
+
+        # (38) Seleção de plano de entrega
         rmp.cnst[:selecao_plano] = @constraint(model, [t=1:T], 0.0 <= 1.0)
 
         # Restrições de Capacidade (4, 5, 6)

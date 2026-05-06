@@ -14,6 +14,21 @@ using JuMP, HiGHS
 # ESTRUTURAS E UTILITÁRIOS
 # ==============================================================================
 
+function adicionar_coluna_prp!(rmp_s, d, t, entregas, custo_r)
+    nova_coluna = @variable(rmp_s.mdl, lower_bound = 0.0)
+    set_objective_coefficient(rmp_s.mdl, nova_coluna, custo_r)
+    
+    total_saida = sum(values(entregas))
+    set_normalized_coefficient(rmp_s.cnst[:balanco_planta][t], nova_coluna, -total_saida)
+    
+    for (cliente_idx, qtd) in entregas
+        set_normalized_coefficient(rmp_s.cnst[:balanco_cliente][cliente_idx, t], nova_coluna, qtd)
+    end
+    
+    set_normalized_coefficient(rmp_s.cnst[:limite_veiculos][t], nova_coluna, 1.0)
+    return nova_coluna
+end
+
 mutable struct QRoute
     h::Int 
     i::Int 
