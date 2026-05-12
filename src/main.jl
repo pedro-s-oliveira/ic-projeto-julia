@@ -85,7 +85,7 @@ function extract_duals(rmp_struct, d_prp)
     if has_duals(model)
         for t in 1:T
             alpha1[t] = dual(rmp_struct.cnst[:balanco_planta][t])
-            alpha3[t] = dual(rmp_struct.cnst[:selecao_plano][t])
+            alpha3[t] = dual(rmp_struct.cnst[:limite_veiculos][t])
             for i in 2:(n_clientes+1)
                 alpha2[i, t] = dual(rmp_struct.cnst[:balanco_cliente][i, t])
             end
@@ -111,7 +111,7 @@ function adicionar_coluna_prp!(rmp_struct, d_prp, t, entregas, custo_rota)
         end
     end
     
-    set_normalized_coefficient(rmp_struct.cnst[:selecao_plano][t], theta, 1.0)
+    set_normalized_coefficient(rmp_struct.cnst[:limite_veiculos][t], theta, 1.0)
 end
 
 # ==============================================================================

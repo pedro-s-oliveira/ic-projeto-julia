@@ -47,7 +47,7 @@ module Rmp
         # -------------------------------------------------------------------------
         @variable(model, p[1:T] >= 0)
         @variable(model, I[0:n_clientes, 0:T] >= 0)
-        @variable(model, y[1:T], Bin)
+        @variable(model, 0 <= y[1:T] <= 1)
         
         # Variáveis Artificiais (Sigma) para garantir a viabilidade inicial (Big-M)
         @variable(model, sigma_planta[1:T] >= 0)
