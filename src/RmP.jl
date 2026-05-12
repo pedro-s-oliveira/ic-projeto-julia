@@ -19,12 +19,11 @@ module Rmp
             set_optimizer_attribute(mdl, "output_flag", false)  
             vars = Dict{Symbol, Any}()
             cnst = Dict{Symbol, Any}()
-            # Correção dos nomes internos da struct
             new(mdl, nome, vars, nothing, cnst, nothing)
         end
     end
 
-    # Métodos genéricos do professor
+    # Métodos genéricos
     function adicionar_restricao!(m::mp, nome::Symbol, expressao)
         constr_ref = add_constraint(m.mdl, expressao)
         m.cnst[nome] = constr_ref
@@ -34,59 +33,67 @@ module Rmp
     # =========================================================================
     # LÓGICA DO PROBLEMA MESTRE RESTRITO (RMP) - Adulyasak (2015)
     # =========================================================================
-    function createRMP(d_prp) 
-        println("Criando PMR para o Problema de Roteamento de Produção...")
-        rmp = mp("RMP_Producao")
-        model = rmp.mdl 
-        
-        T = d_prp.T
-        n_clientes = d_prp.n
-        clientes = 2:(n_clientes + 1)
-        deposito = 1
-        
-        # Variáveis Originais (34-38)
-        @variable(model, p[1:T] >= 0)                   
-        @variable(model, I[1:(n_clientes+1), 0:T] >= 0) 
-        @variable(model, 0 <= y[1:T] <= 1)              
-        @variable(model, art_plant[1:T] >= 0)
-        @variable(model, art_cust[clientes, 1:T] >= 0)
+    function createRMP(d_prp)
+        rmp = mp("Problema_Mestre_Restrito")
+        model = rmp.mdl
 
-        # Função Objetivo (34)
-        @objective(model, Min, 
+        T = d_prp.T
+        clientes = 1:d_prp.n
+        n_clientes = d_prp.n
+        deposito = 0
+
+        # -------------------------------------------------------------------------
+        # VARIÁVEIS
+        # -------------------------------------------------------------------------
+        @variable(model, p[1:T] >= 0)
+        @variable(model, I[0:n_clientes, 0:T] >= 0)
+        @variable(model, y[1:T], Bin)
+        
+        # Variáveis Artificiais (Sigma) para garantir a viabilidade inicial (Big-M)
+        @variable(model, sigma_planta[1:T] >= 0)
+        @variable(model, sigma_cliente[clientes, 1:T] >= 0)
+
+        # -------------------------------------------------------------------------
+        # FUNÇÃO OBJETIVO
+        # -------------------------------------------------------------------------
+        rmp.obj = @objective(model, Min,
             sum(d_prp.u * p[t] + d_prp.f * y[t] for t in 1:T) +                
             sum(d_prp.h[1] * I[deposito, t] for t in 1:T) +                    
             sum(d_prp.h[i] * I[i, t] for i in clientes, t in 1:T) +            
-            1e7 * (sum(art_plant[t] for t in 1:T) + sum(art_cust[i, t] for i in clientes, t in 1:T)) 
+            1e5 * sum(sigma_planta[t] for t in 1:T) +   # Multa menor na fábrica (100 mil)
+            1e7 * sum(sigma_cliente[i, t] for i in clientes, t in 1:T) # Multa maior nos clientes (10 milhões)
         )
         
-        # Estoque inicial fixado em 0 (ajustável se d_prp.I0 for usado)
-        for i in 1:(n_clientes+1)
+        # -------------------------------------------------------------------------
+        # RESTRIÇÕES
+        # -------------------------------------------------------------------------
+        # Estoque inicial fixado em 0 para todos os nós
+        for i in 0:n_clientes
             fix(I[i, 0], 0.0, force=true) 
         end
 
-        # (35) Balanço de Estoque na Fábrica
+        # (35) Balanço de Estoque na Fábrica 
         rmp.cnst[:balanco_planta] = @constraint(model, [t=1:T],
-            I[deposito, t-1] + p[t] - art_plant[t] == I[deposito, t]
+            I[deposito, t-1] + p[t] + sigma_planta[t] == I[deposito, t]
         )
 
         # (36) Balanço de Estoque nos Clientes
         rmp.cnst[:balanco_cliente] = @constraint(model, [i=clientes, t=1:T],
-            I[i, t-1] + art_cust[i, t] == d_prp.d[i, t] + I[i, t]
+            I[i, t-1] + sigma_cliente[i, t] == d_prp.d[i, t] + I[i, t]
         )
 
-        # (37) Restrição de Limite de Veículos (Hardcoded em 5 para teste inicial)
+        # Restrição de Limite de Veículos por período 
+        # Travado temporariamente em 7.0 até que d_prp.V seja injetado
         rmp.cnst[:limite_veiculos] = @constraint(model, [t=1:T],
-        0.0 <= 5.0
+            0.0 <= 7.0
         )
 
-        # (38) Seleção de plano de entrega
-        rmp.cnst[:selecao_plano] = @constraint(model, [t=1:T], 0.0 <= 1.0)
-
-        # Restrições de Capacidade (4, 5, 6)
-        @constraint(model, [t=1:T], p[t] <= d_prp.C * y[t])
-        @constraint(model, [t=1:T], I[deposito, t] <= d_prp.L[deposito])
-        @constraint(model, [i=clientes, t=1:T], I[i, t] <= d_prp.L[i])
+        # Restrições de Capacidade de Produção
+        rmp.cnst[:capacidade_producao] = @constraint(model, [t=1:T],
+            p[t] <= d_prp.C * y[t]
+        )
 
         return rmp
     end
-end
+
+end 
