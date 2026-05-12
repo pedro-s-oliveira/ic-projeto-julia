@@ -66,7 +66,7 @@ module Rmp
 
         # (35) Balanço de Estoque na Fábrica
         rmp.cnst[:balanco_planta] = @constraint(model, [t=1:T],
-            I[deposito, t-1] + p[t] + art_plant[t] == I[deposito, t]
+            I[deposito, t-1] + p[t] - art_plant[t] == I[deposito, t]
         )
 
         # (36) Balanço de Estoque nos Clientes
@@ -86,7 +86,7 @@ module Rmp
         @constraint(model, [t=1:T], p[t] <= d_prp.C * y[t])
         @constraint(model, [t=1:T], I[deposito, t] <= d_prp.L[deposito])
         @constraint(model, [i=clientes, t=1:T], I[i, t] <= d_prp.L[i])
-    
+
         return rmp
     end
 end
