@@ -14,21 +14,6 @@ using JuMP, HiGHS
 # ESTRUTURAS E UTILITÁRIOS
 # ==============================================================================
 
-function adicionar_coluna_prp!(rmp_s, d, t, entregas, custo_r)
-    nova_coluna = @variable(rmp_s.mdl, lower_bound = 0.0)
-    set_objective_coefficient(rmp_s.mdl, nova_coluna, custo_r)
-    
-    total_saida = sum(values(entregas))
-    set_normalized_coefficient(rmp_s.cnst[:balanco_planta][t], nova_coluna, -total_saida)
-    
-    for (cliente_idx, qtd) in entregas
-        set_normalized_coefficient(rmp_s.cnst[:balanco_cliente][cliente_idx, t], nova_coluna, qtd)
-    end
-    
-    set_normalized_coefficient(rmp_s.cnst[:limite_veiculos][t], nova_coluna, 1.0)
-    return nova_coluna
-end
-
 mutable struct QRoute
     h::Int 
     i::Int 
@@ -86,8 +71,8 @@ function extract_duals(rmp_struct, d_prp)
         for t in 1:T
             alpha1[t] = dual(rmp_struct.cnst[:balanco_planta][t])
             alpha3[t] = dual(rmp_struct.cnst[:limite_veiculos][t])
-            for i in 2:(n_clientes+1)
-                alpha2[i, t] = dual(rmp_struct.cnst[:balanco_cliente][i, t])
+            for i in 1:n_clientes
+                alpha2[i + 1, t] = dual(rmp_struct.cnst[:balanco_cliente][i, t])
             end
         end
     end
@@ -107,7 +92,7 @@ function adicionar_coluna_prp!(rmp_struct, d_prp, t, entregas, custo_rota)
     
     for i in 2:(d_prp.n + 1)
         if entregas[i] > 0
-            set_normalized_coefficient(rmp_struct.cnst[:balanco_cliente][i, t], theta, Float64(entregas[i]))
+            set_normalized_coefficient(rmp_struct.cnst[:balanco_cliente][i - 1, t], theta, Float64(entregas[i]))
         end
     end
     
@@ -238,7 +223,7 @@ function executar()
     iter = 0
     
     # --- VARIÁVEIS DE CONTROLE DE ESTAGNAÇÃO ---
-    best_lb = -1e12
+    best_lb = Inf
     stagnation_counter = 0
     max_stagnation = 15 # Se não melhorar por 15 iterações, encerramos.
 
@@ -254,17 +239,16 @@ function executar()
         current_lb = objective_value(rmp_s.mdl)
         println("Iteração $iter | LB Atual: ", round(current_lb, digits=2))
         
-        # --- VERIFICAÇÃO DE ESTAGNAÇÃO ---
-        if current_lb > best_lb + 0.1
+        # --- VERIFICAÇÃO DE ESTAGNAÇÃO (MINIMIZAÇÃO) ---
+        if current_lb < best_lb - 0.1
             best_lb = current_lb
-            stagnation_counter = 0 # Reseta o contador se houve melhoria
+            stagnation_counter = 0 
         else
             stagnation_counter += 1
         end
 
         if stagnation_counter >= max_stagnation
-            println("\n[!] ALERTA: O algoritmo atingiu o limite de estagnação ($max_stagnation iterações sem melhoria significativa).")
-            println("O limite inferior estabilizou devido à degenerescência do modelo. Interrompendo a busca.")
+            println("\n[!] ALERTA: O algoritmo atingiu o limite de estagnação ($max_stagnation iterações sem melhoria).")
             break
         end
         
