@@ -225,7 +225,8 @@ function executar()
     # --- VARIÁVEIS DE CONTROLE DE ESTAGNAÇÃO ---
     best_lb = Inf
     stagnation_counter = 0
-    max_stagnation = 15 # Se não melhorar por 15 iterações, encerramos.
+    max_stagnation = 5  # Reduzido de 15 para 5 iterações
+    tolerancia = 50.0    # Nova variável: só considera melhoria se cair mais que 5.0
 
     while any_new_column && iter < 1500
         iter += 1
@@ -240,7 +241,7 @@ function executar()
         println("Iteração $iter | LB Atual: ", round(current_lb, digits=2))
         
         # --- VERIFICAÇÃO DE ESTAGNAÇÃO (MINIMIZAÇÃO) ---
-        if current_lb < best_lb - 0.1
+        if current_lb < best_lb - tolerancia # Aqui trocamos o 0.1 pela tolerancia
             best_lb = current_lb
             stagnation_counter = 0 
         else
@@ -248,7 +249,7 @@ function executar()
         end
 
         if stagnation_counter >= max_stagnation
-            println("\n[!] ALERTA: O algoritmo atingiu o limite de estagnação ($max_stagnation iterações sem melhoria).")
+            println("\n[!] ALERTA: O algoritmo atingiu o limite de estagnação ($max_stagnation iterações com melhoria menor que $tolerancia).")
             break
         end
         
