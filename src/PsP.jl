@@ -78,11 +78,18 @@ module Psp
                                 if R[(q₁,i)].load[j] + Δ ≤ d.Mtil[(j,k,v,t)]
                                     cᵣ = R[(q₁,i)].cred - c̄[(i,j)] - Δ*δ[(j,t)]
                                     if cᵣ < R[(q₂,j)].cred
+                                        novo_load = copy(R[(q₁,i)].load)
+                                        novo_load[Int(j)] = novo_load[Int(j)] + Δ
+
+                                        novo_bset = copy(R[(q₁,i)].bset)
+                                        novo_bset[Int(j)] = true
+                                        
+
                                         R[(q₂,j)] = qroute(
                                             pred = (q₁, i), 
-                                            load[int(j)] = R[(q₁,i)].load[int(j)] + Δ, 
+                                            load=int(j) = novo_load[int(j)], 
                                             cred = cᵣ, 
-                                            bset[int(j)] = true,
+                                            bset=int(j) = novo_bset[int(j)],
                                             cost = R[(q₁,i)].cost + d.c[(i,j)],
                                             rseq = [R[(q₁,i)].rseq;j]
                                         )
