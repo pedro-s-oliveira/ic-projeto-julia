@@ -16,7 +16,9 @@ module Psp
 
 
     function qroutes(d::Dados.dados, rmp::Rmp.mp)
+        #Pedro Original
         println("q-routes")
+<<<<<<< HEAD
         #Pedro
         #recupera os duais do problema mestres para cada 
         π = Dict{Tuple{Int,Int},Float64} # armazena o preço dual relativo à visitação do cliente i no período t 
@@ -38,6 +40,38 @@ module Psp
         v = 1
 
         for t in 1:d.T
+=======
+        
+        # 1. Instanciando os dicionários corretamente com parênteses
+        π = Dict{Tuple{Int,Int},Float64}() # armazena o preço dual relativo à visitação
+        δ = Dict{Tuple{Int,Int},Float64}() # armazena o preço dual relativo à entrega
+        c̄ = Dict{Tuple{Int,Int},Float64}() # armazena custo reduzido da distância
+        
+        # modificar quando as instancias tiverem frota heterogenea e multiplos produtos
+        k = 1
+        v = 1
+
+        for t in 1:d.T
+            println("t = ", t)
+            
+            # Pedro: Recupera os duais do problema mestre iterando sobre os clientes no período t
+            for i in 1:d.n
+                δ[(i, t)] = dual(rmp.cnst[:balanco_cliente][i, t])
+                π[(i, t)] = dual(rmp.cnst[:limite_visitas][i, t])
+            end
+            
+            # Correção: O cálculo de c̄ precisa estar dentro do laço t e usar a tupla (i, t)
+            for a in d.A
+                i = a[1]
+                if i > 0 && i < d.n + 1
+                    c̄[a] = d.c[a] - π[(i, t)]
+                else
+                    c̄[a] = d.c[a]
+                end
+            end
+            
+            # inicialização (O código original do professor continua a partir daqui com R = ...) #mudei até aqui#
+>>>>>>> de3ed2a9fab3ee4a3af2598438cc04eea255c159
             println("t = ", t)
             
             #inicialização
@@ -78,6 +112,7 @@ module Psp
                                 if R[(q₁,i)].load[j] + Δ ≤ d.Mtil[(j,k,v,t)]
                                     cᵣ = R[(q₁,i)].cred - c̄[(i,j)] - Δ*δ[(j,t)]
                                     if cᵣ < R[(q₂,j)].cred
+<<<<<<< HEAD
                                         novo_load = copy(R[(q₁,i)].load)
                                         novo_load[Int(j)] = novo_load[Int(j)] + Δ
 
@@ -92,6 +127,24 @@ module Psp
                                             bset=int(j) = novo_bset[int(j)],
                                             cost = R[(q₁,i)].cost + d.c[(i,j)],
                                             rseq = [R[(q₁,i)].rseq;j]
+=======
+                                        
+                                        # 1. Criar cópias dos vetores da rota do predecessor
+                                        novo_load = copy(R[(q₁,i)].load)
+                                        novo_load[Int(j)] = novo_load[Int(j)] + Δ
+                                        
+                                        novo_bset = copy(R[(q₁,i)].bset)
+                                        novo_bset[Int(j)] = true
+                                        
+                                        # 2. Criar a nova qroute e salvar na chave correta (q₂, j)
+                                        R[(q₂,j)] = qroute(
+                                            pred = (q₁, i), 
+                                            load = novo_load, 
+                                            cred = cᵣ, 
+                                            bset = novo_bset,
+                                            cost = R[(q₁,i)].cost + d.c[(i,j)],
+                                            rseq = [R[(q₁,i)].rseq; j]
+>>>>>>> de3ed2a9fab3ee4a3af2598438cc04eea255c159
                                         )
                                     end
                                 end
@@ -112,11 +165,16 @@ module Psp
                             vNumVisitas[i] += 1
                         end
 
+<<<<<<< HEAD
                         #Pedro
                         #adicionar a rota como coluna ao PMR
                         #utilizar vNumVisitas (é o z̄ no PMR), R[].load (é o q̄ no PMR) e R[].cost (é o cᵣ da f.o. do PMR)
                         #R[(q,j)].rseq, q (carga total que é igual a soma das cargas no R[].load), R[].load, R[].cost
                         #para armazenar as rotas reais geradas
+=======
+                        # Pedro: adicionar a rota como coluna ao PMR
+                        Rmp.adicionar_coluna_prp!(rmp, d, t, R[(q,j)].load, vNumVisitas, R[(q,j)].cost)
+>>>>>>> de3ed2a9fab3ee4a3af2598438cc04eea255c159
                     end
                 end
             end            
