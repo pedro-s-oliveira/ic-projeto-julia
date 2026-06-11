@@ -1,181 +1,104 @@
-#modulo para tratar o problema mestre restrito (PMR/RMP/Restricted master problem)
+# modulo para tratar o problema mestre restrito (PMR/RMP/Restricted master problem)
 module Rmp
     using JuMP
     using HiGHS
-    #modulo para leitura e impressao de dados
     include("DaTA.jl") 
     using .Dados
     
-    
-    # Estrutura principal para um problema de programação linear
     mutable struct mp
-        mdl::Model                                # Modelo JuMP
-        nome::String                              # Nome do problema
-        vars::Dict{Symbol, VariableRef}           # Dicionário de variáveis
-        obj::Union{JuMP.GenericAffExpr, Nothing}  # Expressão da função objetivo
-        cnst::Dict{Symbol, ConstraintRef}         # Dicionário de restrições
-        fs::Union{Nothing, Dict{Symbol, Float64}} # Solução ótima encontrada
+        mdl::Model                                
+        nome::String                              
+        vars::Dict{Symbol, Any}                   
+        obj::Union{JuMP.GenericAffExpr, Nothing}  
+        cnst::Dict{Symbol, Any}                   
+        fs::Union{Nothing, Dict{Symbol, Float64}} 
         
-        # Construtor principal
         function mp(nome::String="rmp")
-            # Cria o modelo JuMP com solver HiGHS
             mdl = Model(HiGHS.Optimizer)
             set_silent(mdl)
-            set_optimizer_attribute(mdl, "output_flag", false)  # Disabilitando o relatório do solver
-            
-            # Inicializa os dicionários vazios
-            vars = Dict{Symbol, VariableRef}()
-            rest = Dict{Symbol, ConstraintRef}()
-            
-            # Cria nova instância
-            new(modelo, nome, variaveis, nothing, restricoes, nothing)
+            set_optimizer_attribute(mdl, "output_flag", false)  
+            vars = Dict{Symbol, Any}()
+            cnst = Dict{Symbol, Any}()
+            new(mdl, nome, vars, nothing, cnst, nothing)
         end
     end
 
-    # Métodos para adicionar componentes ao modelo
-    function adicionar_variavel!(m::mp, nome::Symbol, lb::Real=0.0, 
-                                ub::Real=Inf, tipo::Symbol=:continua)
-        # Tipos suportados
-        tipo_map = Dict(
-            :continua => (lb, ub),
-            :inteira => Int,
-            :binaria => Bin
-        )
-        
-        if !(tipo in keys(tipo_map))
-            error("Tipo de variável não suportado. Use :continua, :inteira ou :binaria")
-            exit()
-        end
-        
-        # Cria variável conforme o tipo
-        if tipo == :continua
-            lim_inf, lim_sup = tipo_map[tipo]
-            var_ref = @variable(m.mdl, lim_inf <= nome <= lim_sup)
-        elseif tipo == :inteira
-            var_ref = @variable(m.mdl, integer=true, lower_bound=lb, 
-                            upper_bound=ub, base_name=String(nome))
-        else  # :binaria
-            var_ref = @variable(m.mdl, binary=true, base_name=String(nome))
-        end
-        
-        # Armazena no dicionário
-        m.vars[nome] = var_ref
-        println("Variável $nome adicionada (tipo: $tipo)")
-        return var_ref
-    end
-
-    function definir_objetivo!(m::mp, expressao, sentido::Symbol=:min)
-        # Sentido da otimização
-        if sentido == :min
-            @objective(m.mdl, Min, expressao)
-        elseif sentido == :max
-            @objective(m.mdl, Max, expressao)
-        else
-            error("Sentido deve ser :min ou :max")
-            exit()
-        end
-        
-        m.obj = expressao
-        println("Função objetivo definida (sentido: $sentido)")
-    end
-
+    # Métodos genéricos
     function adicionar_restricao!(m::mp, nome::Symbol, expressao)
+<<<<<<< HEAD
         # Cria restrição
         #constr_ref = @constraint(m.mdl, expressao)
+=======
+>>>>>>> 1a606830c16db806ee0eb5b67b0f64947471488a
         constr_ref = add_constraint(m.mdl, expressao)
-        
-        # Armazena no dicionário
         m.cnst[nome] = constr_ref
-        println("Restrição $nome adicionada")
         return constr_ref
     end
 
-    # Métodos para resolver e acessar resultados
-    function resolver!(m::mp)
-        println("Resolvendo modelo $(m.nome)...")
-        
-        # Otimiza o modelo
-        optimize!(m.mdl)
-        
-        # Verifica status
-        status = termination_status(m.mdl)
-        println("Status: $status")
-        
-        if status == MOI.OPTIMAL
-            # Armazena a solução ótima
-            m.fs = Dict{Symbol, Float64}()
-            for (nome, var) in m.variaveis
-                m.fs[nome] = value(var)
-            end
-            
-            println("Solução ótima encontrada!")
-            println("Valor da função objetivo: ", objective_value(m.mdl))
-        else
-            println("Solução ótima não encontrada.")
-            m.fs = nothing
-        end
-        
-        return status
-    end
+    # =========================================================================
+    # LÓGICA DO PROBLEMA MESTRE RESTRITO (RMP) - Adulyasak (2015)
+    # =========================================================================
+    function createRMP(d_prp)
+        rmp = mp("Problema_Mestre_Restrito")
+        model = rmp.mdl
 
-    function obter_solucao(m::mp)
-        if m.fs === nothing
-            println("Modelo não resolvido ou sem solução ótima.")
-            return nothing
-        end
-        
-        return m.fs
-    end
+        T = d_prp.T
+        clientes = 1:d_prp.n
+        n_clientes = d_prp.n
+        deposito = 0
 
-    function relatorio(m::mp)
-        println("\n" * "="^50)
-        println("RELATÓRIO DO MODELO: $(m.nome)")
-        println("="^50)
+        # -------------------------------------------------------------------------
+        # VARIÁVEIS
+        # -------------------------------------------------------------------------
+        @variable(model, p[1:T] >= 0)
+        @variable(model, I[0:n_clientes, 0:T] >= 0)
+        @variable(model, 0 <= y[1:T] <= 1)
         
-        # Informações gerais
-        println("\nVARIÁVEIS ($(length(m.variaveis))):")
-        for (nome, var) in m.variaveis
-            lb = has_lower_bound(var) ? lower_bound(var) : "-∞"
-            ub = has_upper_bound(var) ? upper_bound(var) : "∞"
-            tipo = is_binary(var) ? "Binária" : (is_integer(var) ? "Inteira" : "Contínua")
-            
-            print("  $nome: $tipo, Domínio: [$lb, $ub]")
-            
-            if m.fs !== nothing
-                valor = m.fs[nome]
-                print(", Valor: ", round(valor, digits=4))
-            end
-            println()
-        end
-        
-        println("\nRESTRIÇÕES ($(length(m.cnst))):")
-        for (nome, constr) in m.cnst
-            println("  $nome: $(constraint_object(constr).func) $(constraint_object(constr).set)")
-        end
-        
-        if m.fs !== nothing
-            println("\nSOLUÇÃO ÓTIMA:")
-            println("  Valor FO: ", objective_value(m.mdl))
-            println("  Gap: ", round((objective_bound(m.mdl) - objective_value(m.mdl)) / 
-                objective_bound(m.mdl) * 100, digits=2), "%")
-        end
-        
-        println("="^50)
-    end
-    
-    function createRMP(d::Dados.dados) #Rich restricted master problem
-        #Criando Problema Mestre Restrito (PMR) 
-        # Exemplo: cria um problema de transporte
-        println("Criando PMR...")
+        # Variáveis Artificiais (Sigma) para garantir a viabilidade inicial (Big-M)
+        @variable(model, sigma_planta[1:T] >= 0)
+        @variable(model, sigma_cliente[clientes, 1:T] >= 0)
 
-        #rmp é um struct do tipo mp
-        rmp = mp("rmp")
-        #parei aqui
-    
+        # -------------------------------------------------------------------------
+        # FUNÇÃO OBJETIVO
+        # -------------------------------------------------------------------------
+        rmp.obj = @objective(model, Min,
+            sum(d_prp.u * p[t] + d_prp.f * y[t] for t in 1:T) +                
+            sum(d_prp.h[1] * I[deposito, t] for t in 1:T) +                    
+            sum(d_prp.h[i] * I[i, t] for i in clientes, t in 1:T) +            
+            1e5 * sum(sigma_planta[t] for t in 1:T) +   # Multa menor na fábrica (100 mil)
+            1e7 * sum(sigma_cliente[i, t] for i in clientes, t in 1:T) # Multa maior nos clientes (10 milhões)
+        )
+        
+        # -------------------------------------------------------------------------
+        # RESTRIÇÕES
+        # -------------------------------------------------------------------------
+        # Estoque inicial fixado em 0 para todos os nós
+        for i in 0:n_clientes
+            fix(I[i, 0], 0.0, force=true) 
+        end
+
+        # (35) Balanço de Estoque na Fábrica 
+        rmp.cnst[:balanco_planta] = @constraint(model, [t=1:T],
+            I[deposito, t-1] + p[t] - sigma_planta[t] == I[deposito, t]
+        )
+
+        # (36) Balanço de Estoque nos Clientes
+        rmp.cnst[:balanco_cliente] = @constraint(model, [i=clientes, t=1:T],
+            I[i, t-1] + sigma_cliente[i, t] == d_prp.d[i, t] + I[i, t]
+        )
+
+        # Restrição de Limite de Veículos por período 
+        # Travado temporariamente em 7.0 até que d_prp.V seja injetado
+        rmp.cnst[:limite_veiculos] = @constraint(model, [t=1:T],
+            0.0 <= 7.0
+        )
+
+        # Restrições de Capacidade de Produção
+        rmp.cnst[:capacidade_producao] = @constraint(model, [t=1:T],
+            p[t] <= d_prp.C * y[t]
+        )
+
         return rmp
     end
-    
-    
-    
-    
-end
+
+end 
