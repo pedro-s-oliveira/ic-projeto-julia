@@ -34,9 +34,7 @@ function construir_pmr_base(d_prp)
         sum(d_prp.s * y[t] + d_prp.u * p[t] + d_prp.h_0 * I_0[t] for t in 1:T) + 
         sum(d_prp.h[i] * I[i, t] for i in 1:n_clientes, t in 1:T) +
         sum(custo_M * sigma_planta[t] for t in 1:T) +
-        sum(custo_M * sigma_cliente[i, t] for i in 1:n_clientes, t in 1:T)
-    )
-
+        sum(custo_M * sigma_cliente[i, t] for i in 1:n_clientes, t in 1:T)A
     cnst = Dict{Symbol, Any}()
 
     @constraint(model, cap_producao[t=1:T], p[t] <= d_prp.M[t] * y[t])
