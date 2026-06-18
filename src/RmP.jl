@@ -25,11 +25,8 @@ module Rmp
 
     # Métodos genéricos
     function adicionar_restricao!(m::mp, nome::Symbol, expressao)
-<<<<<<< HEAD
         # Cria restrição
         #constr_ref = @constraint(m.mdl, expressao)
-=======
->>>>>>> 1a606830c16db806ee0eb5b67b0f64947471488a
         constr_ref = add_constraint(m.mdl, expressao)
         m.cnst[nome] = constr_ref
         return constr_ref

@@ -99,3 +99,45 @@ function adicionar_coluna_prp!(rmp_struct, d_prp, t, entregas, z_ir, custo_rota)
     
     set_normalized_coefficient(rmp_struct.cnst[:limite_veiculos][t], theta, 1.0)
 end
+
+#=
+
+function extract_duals(rmp_struct, d_prp)
+    model = rmp_struct.mdl
+    T, n_clientes = d_prp.T, d_prp.n
+    alpha1, alpha3 = zeros(T), zeros(T)
+    alpha2 = zeros(n_clientes + 2, T)
+    
+    if has_duals(model)
+        for t in 1:T
+            alpha1[t] = dual(rmp_struct.cnst[:balanco_planta][t])
+            alpha3[t] = dual(rmp_struct.cnst[:limite_veiculos][t])
+            for i in 1:n_clientes
+                alpha2[i + 1, t] = dual(rmp_struct.cnst[:balanco_cliente][i, t])
+            end
+        end
+    end
+    return alpha1, alpha2, alpha3
+end
+
+function adicionar_coluna_prp!(rmp_struct, d_prp, t, entregas, custo_rota)
+    model = rmp_struct.mdl
+    theta = @variable(model, lower_bound=0.0, upper_bound=1.0)
+    
+    set_objective_coefficient(model, theta, custo_rota)
+    
+    total_entregue = sum(entregas)
+    if total_entregue > 0
+        set_normalized_coefficient(rmp_struct.cnst[:balanco_planta][t], theta, -Float64(total_entregue))
+    end
+    
+    for i in 2:(d_prp.n + 1)
+        if entregas[i] > 0
+            set_normalized_coefficient(rmp_struct.cnst[:balanco_cliente][i - 1, t], theta, Float64(entregas[i]))
+        end
+    end
+    
+    set_normalized_coefficient(rmp_struct.cnst[:limite_veiculos][t], theta, 1.0)
+end
+
+=#
