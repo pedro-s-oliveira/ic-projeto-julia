@@ -78,21 +78,20 @@ function adicionar_coluna_prp!(rmp_struct, d_prp, t, entregas, z_ir, custo_rota)
     theta = @variable(model, lower_bound=0.0, upper_bound=1.0)
     set_objective_coefficient(model, theta, custo_rota)
     
-    # Impacto Global na Fábrica (usa o vetor de entregas)
+    # Impacto Global na Fábrica: Caminhão RETIRA produtos (Sinal Negativo)
     total_entregue = sum(entregas)
     if total_entregue > 0
-        set_normalized_coefficient(rmp_struct.cnst[:balanco_planta][t], theta, Float64(total_entregue))
+        set_normalized_coefficient(rmp_struct.cnst[:balanco_planta][t], theta, -Float64(total_entregue))
     end
     
-    # Impacto Específico: Percurso e Quantidades
+    # Impacto Específico no Cliente: Caminhão ENTREGA produtos (Sinal Positivo)
     for i in 1:d_prp.n
-        # Se houve entrega ou se houve visita para o cliente i
         if entregas[i] > 0 || z_ir[i] > 0
             
-            # Injeta a quantidade no balanço do cliente (negativo para normalizar somando)
-            set_normalized_coefficient(rmp_struct.cnst[:balanco_cliente][i, t], theta, -Float64(entregas[i]))
+            # Injeta a quantidade no balanço do cliente
+            set_normalized_coefficient(rmp_struct.cnst[:balanco_cliente][i, t], theta, Float64(entregas[i]))
             
-            # Injeta a visita no limite de visitas do cliente, utilizando o vetor exigido pelo professor
+            # Injeta a visita no limite de visitas do cliente
             set_normalized_coefficient(rmp_struct.cnst[:limite_visitas][i, t], theta, Float64(z_ir[i]))
         end
     end

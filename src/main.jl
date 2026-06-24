@@ -76,20 +76,23 @@ function executar()
     any_new_column = true
     iter = 0
     
-    # --- VARIÁVEIS DE CONTROLE DE ESTAGNAÇÃO ---
+    # --- VARIÁVEIS DE CONTROLE RESTAURADAS ---
     best_lb = Inf
     stagnation_counter = 0
-    max_stagnation = 5  # Reduzido de 15 para 5 iterações
-    tolerancia = 50.0    # Nova variável: só considera melhoria se cair mais que 5.0
-
+    max_stagnation = 5
+    tolerancia = 50.0
     maxIter = 1500
-    #ϵ = 1e-6 
-    while any_new_column && iter < maxIter #ϵ < 0.05
+
+    while any_new_column && iter < maxIter 
         iter += 1
+        
+        # 1. Resolve o Problema Mestre Restrito (RMP) atual
         optimize!(rmp_s.mdl)
         
-        if termination_status(rmp_s.mdl) != MOI.OPTIMAL 
-            println("Status de término anormal no RMP: ", termination_status(rmp_s.mdl))
+        # 2. Verifica o status da otimização para garantir que não deu Inviável
+        status_mestre = termination_status(rmp_s.mdl)
+        if status_mestre != MOI.OPTIMAL 
+            println("Status de término anormal no RMP: ", status_mestre)
             break 
         end
         
@@ -97,7 +100,7 @@ function executar()
         println("Iteração $iter | LB Atual: ", round(current_lb, digits=2))
         
         # --- VERIFICAÇÃO DE ESTAGNAÇÃO (MINIMIZAÇÃO) ---
-        if current_lb < best_lb - tolerancia # Aqui trocamos o 0.1 pela tolerancia
+        if current_lb < best_lb - tolerancia
             best_lb = current_lb
             stagnation_counter = 0 
         else
@@ -109,39 +112,41 @@ function executar()
             break
         end
 
-        #chamando o procedimento de precificação
-
-        @show typeof(dados_instancia) 
-        @show typeof(rmp_s) 
-        readline()
+        # 3. Chama o subproblema com os duais já gerados
         Psp.qroutes(dados_instancia, rmp_s)
         
-
-        #=
-        a1, a2, a3 = extract_duals(rmp_s, d_prp)
-        any_new_column = false
-
-        for t in 1:d_prp.T
-            rc, entregas, custo_r = qroutes_prp(d_prp, a1, a2, a3, t, [], [])
-            # Usamos uma tolerância um pouco maior para evitar rotas "fantasmas"
-            if rc < -1.0 
-                adicionar_coluna_prp!(rmp_s, d_prp, t, entregas, custo_r)
-                any_new_column = true
-            end
-        end
-        =#
-        
+        # Nota: Como o bloco antigo do any_new_column foi comentado, 
+        # o laço vai rodar até atingir a estagnação.
     end
+
+    #=
+    a1, a2, a3 = extract_duals(rmp_s, d_prp)
+    any_new_column = false
+
+    for t in 1:d_prp.T
+        rc, entregas, custo_r = qroutes_prp(d_prp, a1, a2, a3, t, [], [])
+        # Usamos uma tolerância um pouco maior para evitar rotas "fantasmas"
+        if rc < -1.0 
+            adicionar_coluna_prp!(rmp_s, d_prp, t, entregas, custo_r)
+            any_new_column = true
+        end
+    end
+    =#
 
     println("\n" * "="^50)
     println("🏁 SOLUÇÃO FINAL DA GERAÇÃO DE COLUNAS")
     println("Lower Bound Compacto original : 102600.82")
-    println("Lower Bound Geração de Colunas: ", round(objective_value(rmp_s.mdl), digits=2))
+    
+    # Trava de segurança para evitar crash na impressão
+    if has_values(rmp_s.mdl)
+        println("Lower Bound Geração de Colunas: ", round(objective_value(rmp_s.mdl), digits=2))
+    else
+        println("Lower Bound Geração de Colunas: Indisponível (Falha no solver)")
+    end
+    
     println("Total de iterações executadas : ", iter)
     println("="^50)
 end
 
 # Invocando a função principal no escopo correto para evitar os avisos de World Age
 Base.invokelatest(executar)
-
-end

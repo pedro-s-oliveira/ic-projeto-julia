@@ -76,7 +76,7 @@ module Rmp
 
         # (35) Balanço de Estoque na Fábrica 
         rmp.cnst[:balanco_planta] = @constraint(model, [t=1:T],
-            I[deposito, t-1] + p[t] - sigma_planta[t] == I[deposito, t]
+            I[deposito, t-1] + p[t] + sigma_planta[t] == I[deposito, t]
         )
 
         # (36) Balanço de Estoque nos Clientes
@@ -95,6 +95,12 @@ module Rmp
             p[t] <= d_prp.C * y[t]
         )
 
+        # Restrição de Limite de Visitas (1 visita por cliente por período)
+        # Iniciada vazia para receber as rotas do subproblema posteriormente
+        rmp.cnst[:limite_visitas] = @constraint(model, [i=clientes, t=1:T],
+            AffExpr(0.0) <= 1.0
+        )
+        
         return rmp
     end
 
